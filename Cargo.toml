@@ -1,0 +1,8 @@
+[package]
+name = "midicam"
+version = "0.0.1"
+authors = ["strfry <mail@strfry.org>"]
+
+[dependencies]
+opencv = { git = "git://github.com/whitequark/opencv-rust" }
+midir = { git = "git://github.com/Boddlnagg/midir" }
