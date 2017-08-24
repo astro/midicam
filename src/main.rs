@@ -1,5 +1,6 @@
 extern crate opencv;
 extern crate midir;
+extern crate midi;
 
 use std::thread;
 use std::thread::sleep;
@@ -12,6 +13,8 @@ use opencv::{imgproc, objdetect, highgui};
 
 use midir::{MidiInput, MidiOutput, Ignore};
 use midir::os::unix::{VirtualInput, VirtualOutput};
+
+use midi::{Channel, Message, RawMessage, ToRawMessages};
 
 struct Shared<T>(Arc<RwLock<T>>);
 
@@ -36,8 +39,9 @@ struct Cursor {
     y : i32
 }
 
-const SIZE: i32 = 16;
-const DELAY: u32 = 100;
+const SIZE: i32 = 8;
+const DELAY: u32 = 250;
+const DELAY2: u32 = 0;
 
 fn run_webcam(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) -> Result<(), String> {
     let mut classifier =
@@ -81,27 +85,42 @@ fn run_webcam(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) -
 fn midi_worker(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) {
     let midi_out = MidiOutput::new("MidiCam").unwrap();
     let mut conn_out = (midi_out.create_virtual("midicam").map_err(|e| e.kind())).unwrap();
-
-    // Load Piano
-    conn_out.send(&[192, 0]);
+    let mut send = move |msg: Message| for raw_msg in msg.to_raw_messages().into_iter() {
+        match raw_msg {
+            RawMessage::Status(status) =>
+                conn_out.send(&[status]),
+            RawMessage::StatusData(status, data) =>
+                conn_out.send(&[status, data]),
+            RawMessage::StatusDataData(status, data1, data2) =>
+                conn_out.send(&[status, data1, data2]),
+            RawMessage::Raw(raw) =>
+                conn_out.send(&[raw]),
+        }.unwrap();
+    };
 
     loop {
-        let note = {
+        let (r, g, b) = {
             let matrix = shared_matrix.0.read().unwrap();
             let cursor = shared_cursor.0.read().unwrap();
 	    //let note = *pix / 2;
 	    let mut row = matrix.ptr(cursor.y).unwrap();
 	    unsafe {
-		let mut pix = row.offset(3 * cursor.x as isize);
-		*pix / 2
+		let p = |o| *row.offset(3 * cursor.x as isize + o);
+                (p(0), p(1), p(2))
             }
         };
 
-	println!("Sending Midi note {}", note);
-
-	conn_out.send(&[128, note, 0]);
+        send(Message::ProgramChange(Channel::Ch1, 88));
+        send(Message::ProgramChange(Channel::Ch2, 23));
+        send(Message::ProgramChange(Channel::Ch3, 62));
+        if r > 127 {
+            send(Message::NoteOn(Channel::Ch1, g / 2, 127));
+            send(Message::NoteOn(Channel::Ch2, b / 2, 127));
+        }
         sleep(Duration::new(0, DELAY * 1000000));
-	conn_out.send(&[144, note, 127]);
+        send(Message::NoteOff(Channel::Ch1, g / 2, 127));
+        send(Message::NoteOff(Channel::Ch2, b / 2, 127));
+        sleep(Duration::new(0, DELAY2 * 1000000));
 
         let mut cursor = shared_cursor.0.write().unwrap();
 	cursor.x = (cursor.x + 1) % SIZE;
