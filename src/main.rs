@@ -34,6 +34,8 @@ struct Cursor {
 	y : i32
 }
 
+const SIZE: i32 = 32;
+
 fn run_webcam(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) -> Result<(), String> {
 	let mut classifier =
 		try!(objdetect::CascadeClassifier::for_file("haarcascade_frontalface_alt.xml"));
@@ -49,7 +51,7 @@ fn run_webcam(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) -
 			let mut image0 = cv::mat();
 			try!(capture.retrieve(&mut image0, 0));
 			//let mut image1 = cv::mat();
-		        let dest = opencv::core::Size {width: 16, height: 16};
+		        let dest = opencv::core::Size {width: SIZE, height: SIZE};
                         let mut matrix = shared_matrix.0.write().unwrap();
 			try!(imgproc::resize(&image0, &mut matrix, dest, 0.0, 0.0, 0));
 
@@ -87,7 +89,6 @@ fn midi_worker(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) 
 		let mut row = matrix.ptr(cursor.y).unwrap();
 		unsafe {
 		        let mut pix = row.offset(3 * cursor.x as isize);
-                        println!("pix at {}", 3 * cursor.x);
 			let note = *pix / 2;
 			
 			println!("Sending Midi note {}", note);
@@ -95,9 +96,9 @@ fn midi_worker(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) 
 			conn_out.send(&[128, note, 0]);
 			conn_out.send(&[144, note, 127]);
 			
-			cursor.x = (cursor.x + 1) % 16;
+			cursor.x = (cursor.x + 1) % SIZE;
 			if cursor.x == 0 {
-				cursor.y = (cursor.y + 1) % 16;
+				cursor.y = (cursor.y + 1) % SIZE;
 			}
 		}
 	}
@@ -106,7 +107,7 @@ fn midi_worker(shared_matrix : Shared<cv::Mat>, shared_cursor : Shared<Cursor>) 
 fn main() {
 	let cursor = Shared::new(Cursor {x: 0, y: 0});
         let cursor_ = cursor.clone();
-	let the_matrix = Shared::new(cv::mat());
+	let the_matrix = Shared::new(cv::Mat::for_rows_and_cols(SIZE, SIZE, cv::CV_8UC3).unwrap());
         let the_matrix_ = the_matrix.clone();
 	thread::spawn(move || {
 		println!("I'm in a thread, doing stuff");
